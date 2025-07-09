@@ -6,7 +6,7 @@ exports.checkRole = (roles = []) => {
     next();
   };
 };
-  const jwt = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 
 exports.verifyToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -16,7 +16,7 @@ exports.verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; 
+    req.user = decoded;
     next();
   } catch (err) {
     return res.status(403).json({ error: 'Invalid or expired token' });

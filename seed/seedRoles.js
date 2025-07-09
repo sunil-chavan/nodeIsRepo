@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const Role = require('../models/Role'); 
+const Role = require('../models/Role');
 
 mongoose.connect('mongodb://localhost:27017/dhruvsCloudKitchen', {
   useNewUrlParser: true,
