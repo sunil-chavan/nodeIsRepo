@@ -2,11 +2,11 @@ const UserTiffin = require('../models/UserTiffin');
 
 // 1. Create or Update User Tiffin Subscription
 exports.createOrUpdateUserTiffin = async (req, res) => {
-  const { user, tiffinCategory, month, status = 'active' } = req.body;
+  const { user, tiffinCategory, month,fromDate,endDate, status = 'active' } = req.body;
   try {
     const updated = await UserTiffin.findOneAndUpdate(
       { user, month },
-      { tiffinCategory, status },
+      { tiffinCategory, fromDate,endDate,status },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).populate('user tiffinCategory');
 

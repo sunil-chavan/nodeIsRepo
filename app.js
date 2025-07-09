@@ -7,6 +7,8 @@ const tiffinRoutes = require("./routes/tiffinRoutes");
 const tiffinCategoryRoutes = require('./routes/tiffinCategoryRoutes');
 const { verifyToken } = require('./middleware/authMiddleware');
 const userTiffinRoutes = require('./routes/userTiffinRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+
 
 
 
@@ -37,6 +39,8 @@ app.use("/api/users", userRoutes);
 app.use('/api/tiffin', tiffinRoutes);
 app.use('/api/tiffin-category', tiffinCategoryRoutes);
 app.use('/api/usertiffin', userTiffinRoutes);
+app.use('/api/inventory', inventoryRoutes);
+
 
 
 

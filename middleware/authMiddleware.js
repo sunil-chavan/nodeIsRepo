@@ -1,11 +1,11 @@
 exports.checkRole = (roles = []) => {
-    return (req, res, next) => {
-      if (!roles.includes(req.user.role)) {
-        return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
-      }
-      next();
-    };
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
   };
+};
   const jwt = require('jsonwebtoken');
 
 exports.verifyToken = (req, res, next) => {
@@ -21,4 +21,12 @@ exports.verifyToken = (req, res, next) => {
   } catch (err) {
     return res.status(403).json({ error: 'Invalid or expired token' });
   }
+};
+
+// Only superadmin and admin
+exports.checkAdminOnly = (req, res, next) => {
+  if (!["admin", "superadmin"].includes(req.user.role)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+  next();
 };
