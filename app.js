@@ -8,6 +8,8 @@ const tiffinCategoryRoutes = require('./routes/tiffinCategoryRoutes');
 const { verifyToken } = require('./middleware/authMiddleware');
 const userTiffinRoutes = require('./routes/userTiffinRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
+const dashboardRoutes = require("./routes/dashboardRoutes");
+
 
 
 
@@ -35,6 +37,7 @@ mongoose
 app.use("/api/auth", authRoutes);
 // ------------------------------
 app.use('/api', verifyToken);
+app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/users", userRoutes);
 app.use('/api/tiffin', tiffinRoutes);
 app.use('/api/tiffin-category', tiffinCategoryRoutes);
