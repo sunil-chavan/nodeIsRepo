@@ -117,6 +117,10 @@ exports.generateUserBill = async (req, res) => {
   const isAdmin = ["admin", "superadmin"].includes(requester.role);
   const targetUserIds = isAdmin && !userId ? null : [userId || requester.id];
   try {
+      const formatDate = (d) => {
+        const dateObj = new Date(d);
+        return dateObj.toISOString().split("T")[0]; 
+      };
     const query = {
       status: "active",
       fromDate: { $lte: new Date(toDate) },
@@ -131,10 +135,15 @@ exports.generateUserBill = async (req, res) => {
       return res.status(404).json({ error: "No active user subscriptions found in this date range" });
     }
     const results = [];
+    const from = formatDate(fromDate);
+
+    const to = formatDate(toDate);
+    console.log("from===>",from);
+    console.log("to===>",to);
     for (const sub of subscriptions) {
       const attendances = await TiffinAttendance.find({
-        userTiffin: sub.user._id,
-        date: { $gte: fromDate, $lte: toDate } 
+        userTiffin: sub.user._id, // ✅ correct field
+        date: { $gte: from, $lte: to } // ✅ comparing with string-formatted dates
       });
       const billRows = attendances.map((att) => {
         const dateObj = new Date(att.date);
@@ -147,7 +156,6 @@ exports.generateUserBill = async (req, res) => {
       });
       const totalDays = billRows.filter(r => r.status === "Present").length;
       const totalAmount = billRows.reduce((sum, r) => sum + r.price, 0);
-      console.log("billRows===>",billRows);
       const filePath = await generatePDF({
         userName: sub.user.name,
         fromDate,
@@ -192,9 +200,13 @@ exports.markTiffinAttendance = async (req, res) => {
             };
           }
 
-          const userTiffin = await UserTiffin.findById(userTiffinId).populate(
-            "user"
-          );
+          // const userTiffin = await UserTiffin.findById(userTiffinId).populate("user");
+          const userTiffin = await UserTiffin.findOne({
+            user: userTiffinId, 
+            status: 'active', 
+            fromDate: { $lte: new Date(date) },
+            endDate: { $gte: new Date(date) },
+          });
           if (!userTiffin || !userTiffin.user) {
             return {
               success: false,
