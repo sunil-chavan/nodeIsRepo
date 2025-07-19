@@ -4,12 +4,7 @@ const tiffinController = require('../controllers/tiffinController');
 const { verifyToken, checkRole } = require("../middleware/authMiddleware");
 
 // Routes
-router.post(
-  "/generate-user-bill",
-  verifyToken,
-  checkRole(["user", "admin", "superadmin"]),
-  tiffinController.generateUserBill
-);
+router.post("/generate-user-bill",  verifyToken,  checkRole(["user", "admin", "superadmin"]), tiffinController.generateUserBill);
 
 // router.post(
 //   "/generate-bill",
@@ -18,31 +13,13 @@ router.post(
 //   tiffinController.generateBillByDateRange
 // );
 
-router.post(
-  "/attendance",
-  verifyToken,
-  checkRole(["admin", "superadmin"]),
-  tiffinController.markTiffinAttendance
-);
+router.post("/attendance",verifyToken,checkRole(["admin", "superadmin"]), tiffinController.markTiffinAttendance);
 
-router.put(
-  "/attendance/:id",
-  verifyToken,
-  checkRole(["superadmin", "admin"]),
-  tiffinController.updateAttendance
-);
+router.put("/attendance/:id",verifyToken,  checkRole(["superadmin", "admin"]),  tiffinController.updateAttendance);
 
-router.delete(
-  "/attendance/:id",
-  verifyToken,
-  checkRole(["superadmin", "admin"]),
-  tiffinController.deleteAttendance
-);
+router.delete("/attendance/:id",  verifyToken,  checkRole(["superadmin", "admin"]),  tiffinController.deleteAttendance);
 
-router.get(
-  "/attendance/:id",
-  verifyToken,
-  tiffinController.getAttendanceById
-);
+router.get("/attendance/:id",verifyToken,  tiffinController.getAttendanceById);
+router.get("/attendance",verifyToken,  tiffinController.getAttendances);
 
 module.exports = router;

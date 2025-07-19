@@ -1,10 +1,11 @@
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
-const User = require("../models/User");
-const UserTiffin = require("../models/UserTiffin");
 const TiffinAttendance = require("../models/TiffinAttendance");
-const generatePDF = require('../utils/generateStyledPDF');
+const TiffinSubscription = require('../models/TiffinSubscription');
+const generatePDF = require("../utils/generateStyledPDF");
+const MonthlyMemberBill = require('../models/MonthlyMemberBill');
+const User = require("../models/User");
 
 const generateStyledPDF = async ({
   userName,
@@ -106,155 +107,393 @@ const generateStyledPDF = async ({
   return filePath;
 };
 // ✅ 1. Generate Bill
-exports.generateUserBill = async (req, res) => {
-  const { fromDate, toDate, userId } = req.body;
+const getUsers = async () => {
+  return [
+    { name: 'Sunil Chavan', email: 'sunil@example.com' },
+    { name: 'Amit Yadav', email: 'amit@example.com' },
+  ];
+};
+exports.generateUserBillNew = async (req, res) => {
+  try {
+    const { fromDate, endDate, invoiceMonth } = req.body;
+
+    if (!fromDate || !endDate || !invoiceMonth) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: fromDate, endDate, invoiceMonth',
+      });
+    }
+
+    const users = await getUsers(); // Replace with DB logic
+    const invoiceDataArray = [];
+
+    for (const user of users) {
+      const totalDays = 4; // Replace with real logic
+      const totalAmount = totalDays * 70;
+
+      const fileName = `${user.name.replace(/\s/g, "_")}_${fromDate}_to_${endDate}.pdf`;
+      const filePath = path.join(__dirname, '../bills', fileName);
+
+      await generatePDF({
+        user,
+        fromDate,
+        endDate,
+        invoiceMonth,
+        totalDays,
+        totalAmount,
+        items: [
+          { name: 'Tiffin Day 1', price: 70 },
+          { name: 'Tiffin Day 2', price: 70 },
+          { name: 'Tiffin Day 3', price: 70 },
+          { name: 'Tiffin Day 4', price: 70 },
+        ],
+        filePath
+      });
+
+      invoiceDataArray.push({
+        user: user.name,
+        email: user.email,
+        invoiceMonth,
+        totalDays,
+        totalAmount,
+        invoicePdfUrl: filePath,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Invoices generated successfully',
+      data: invoiceDataArray,
+    });
+
+  } catch (error) {
+    console.error('❌ Error in generateUserBill:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Something went wrong',
+      error: error.message,
+    });
+  }
+};
+exports.generateUserBillOld = async (req, res) => {
+  const { fromDate, endDate , userId } = req.body;
   const requester = req.user;
 
-  if (!fromDate || !toDate) {
-    return res.status(400).json({ error: "fromDate and toDate are required" });
+  if (!fromDate || !endDate) {
+    return res.status(400).json({ success: false, message: "fromDate and toDate are required" });
   }
 
   const isAdmin = ["admin", "superadmin"].includes(requester.role);
-  const targetUserIds = isAdmin && !userId ? null : [userId || requester.id];
+  const targetUserIds = Array.isArray(userId)
+    ? userId
+    : userId
+    ? [userId]
+    : isAdmin
+    ? []
+    : [requester.id];
+
   try {
-      const formatDate = (d) => {
-        const dateObj = new Date(d);
-        return dateObj.toISOString().split("T")[0]; 
-      };
+    const from = new Date(fromDate);
+    const to = new Date(endDate);
+
     const query = {
       status: "active",
-      fromDate: { $lte: new Date(toDate) },
-      endDate: { $gte: new Date(fromDate) },
+      fromDate: { $lte: from },
+      endDate: { $gte: to },
     };
-    if (targetUserIds) query.user = { $in: targetUserIds };
-    const subscriptions = await UserTiffin.find(query)
-      .populate("user")
-      .populate("tiffinCategory");
+
+    if (targetUserIds.length) {
+      query.userId = { $in: targetUserIds };
+    }
+
+    const subscriptions = await TiffinSubscription.find(query)
+      .populate("userId", "name email")
+      .populate("tiffinCategoryId", "name price");
 
     if (!subscriptions.length) {
-      return res.status(404).json({ error: "No active user subscriptions found in this date range" });
+      return res.status(404).json({
+        success: false,
+        message: "No subscriptions found for this date range.",
+      });
     }
-    const results = [];
-    const from = formatDate(fromDate);
 
-    const to = formatDate(toDate);
-    console.log("from===>",from);
-    console.log("to===>",to);
+    const results = [];
+
     for (const sub of subscriptions) {
-      const attendances = await TiffinAttendance.find({
-        userTiffin: sub.user._id, // ✅ correct field
-        date: { $gte: from, $lte: to } // ✅ comparing with string-formatted dates
+      if (!sub.userId || !sub.userId.name) continue;
+
+      const attendanceRecords = await TiffinAttendance.find({
+        userId: sub.userId._id,
+        date: { $gte: from, $lte: to },
       });
-      const billRows = attendances.map((att) => {
-        const dateObj = new Date(att.date);
-        return {
-          date: dateObj.toISOString().split("T")[0],
-          day: dateObj.toLocaleDateString("en-IN", { weekday: "short" }),
-          status: att.status === "present" ? "Present" : "Absent",
-          price: att.status === "present" ? sub.tiffinCategory.price : 0
-        };
+
+      const attendanceMap = {};
+      attendanceRecords.forEach((rec) => {
+        const dateStr = rec.date.toISOString().split("T")[0];
+        attendanceMap[dateStr] = rec;
       });
-      const totalDays = billRows.filter(r => r.status === "Present").length;
+
+      const billRows = [];
+      for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split("T")[0];
+        const record = attendanceMap[dateStr];
+
+        const status = record?.status === "present" ? "Present" : "Absent";
+        const shift = record?.tiffinShiftStatus || "N/A";
+        const price = status === "Present" ? sub.tiffinCategoryId?.price || 0 : 0;
+
+        billRows.push({
+          date: dateStr,
+          day: d.toLocaleDateString("en-IN", { weekday: "short" }),
+          shift,
+          status,
+          price,
+        });
+      }
+
+      const totalDays = billRows.filter((r) => r.status === "Present").length;
       const totalAmount = billRows.reduce((sum, r) => sum + r.price, 0);
-      const filePath = await generatePDF({
-        userName: sub.user.name,
+
+      const userInitial = sub.userId.name.toLowerCase().replace(/\s+/g, "-").substring(0, 20);
+      const invoiceId = `${userInitial}-${fromDate}-${endDate}`;
+      const fileName = `${invoiceId}.pdf`;
+
+      const folderPath = path.join(__dirname, "..", "public", "invoices", invoiceId);
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+      }
+
+      const fullInvoicePath = path.join(folderPath, fileName);
+      const invoicePdfUrls = `/invoices/${invoiceId}/${fileName}`;
+
+      // Generate PDF
+      const invoicePdfUrl = await generatePDF({
+        userName: sub.userId.name,
         fromDate,
-        toDate,
+        endDate,
         billRows,
         totalDays,
-        totalAmount
+        totalAmount,
+        outputFile: fullInvoicePath,
       });
+console.log("generatePDFUrl ====>",invoicePdfUrl );
+      // Save to DB
+      await MonthlyMemberBill.create({
+        userId: sub.userId._id,
+        invoiceMonth: invoiceId,
+        invoicePdfUrl,
+        invoiceBillStatus: "unpaid",
+        invoiceDownloadStatus: "original",
+      });
+
       results.push({
-        user: sub.user.name,
-        filePath,
+        user: sub.userId.name,
+        email: sub.userId.email,
+        invoiceMonth: invoiceId,
         totalDays,
-        totalAmount
+        totalAmount,
+        invoicePdfUrl,
       });
     }
+    
     return res.status(200).json({
-      message: "Bill(s) generated successfully",
-      results
+      success: true,
+      message: "Bills generated successfully.",
+      results,
     });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error("Bill generation failed:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      details: err.message,
+    });
   }
 };
+exports.generateUserBill = async (req, res) => {
+  const { fromDate, endDate, userId } = req.body;
+  const requester = req.user;
 
+  if (!fromDate || !endDate) {
+    return res.status(400).json({ success: false, message: "fromDate and endDate are required" });
+  }
+
+  const isAdmin = ["admin", "superadmin"].includes(requester.role);
+  const targetUserIds = Array.isArray(userId)
+    ? userId
+    : userId
+    ? [userId]
+    : isAdmin
+    ? []
+    : [requester.id];
+
+  try {
+    const from = new Date(fromDate);
+    const to = new Date(endDate);
+
+    const query = {
+      status: "active",
+      fromDate: { $lte: from },
+      endDate: { $gte: to },
+    };
+
+    if (targetUserIds.length) {
+      query.userId = { $in: targetUserIds };
+    }
+
+    const subscriptions = await TiffinSubscription.find(query)
+      .populate("userId", "name email")
+      .populate("tiffinCategoryId", "name price");
+
+    if (!subscriptions.length) {
+      return res.status(404).json({ success: false, message: "No subscriptions found." });
+    }
+
+    const results = [];
+
+    for (const sub of subscriptions) {
+      if (!sub.userId || !sub.userId.name) continue;
+
+      const attendanceRecords = await TiffinAttendance.find({
+        userId: sub.userId._id,
+        date: { $gte: from, $lte: to },
+      });
+
+      const attendanceMap = {};
+      attendanceRecords.forEach(rec => {
+        const dateStr = rec.date.toISOString().split("T")[0];
+        attendanceMap[dateStr] = rec;
+      });
+
+      const billRows = [];
+      for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split("T")[0];
+        const record = attendanceMap[dateStr];
+
+        const status = record?.status === "present" ? "Present" : "Absent";
+        const shift = record?.tiffinShiftStatus || "N/A";
+        const price = status === "Present" ? sub.tiffinCategoryId?.price || 0 : 0;
+
+        billRows.push({
+          date: dateStr,
+          day: d.toLocaleDateString("en-IN", { weekday: "short" }),
+          shift,
+          status,
+          price,
+        });
+      }
+
+      const totalDays = billRows.filter(r => r.status === "Present").length;
+      const totalAmount = billRows.reduce((sum, r) => sum + r.price, 0);
+
+      const invoiceId = `${sub.userId.name.toLowerCase().replace(/\s+/g, "-")}-${fromDate}-${endDate}`;
+      const fileName = `${invoiceId}.pdf`;
+      const folderPath = path.join(__dirname, "..", "public", "invoices", invoiceId);
+
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+      }
+
+      const fullInvoicePath = path.join(folderPath, fileName);
+      const publicInvoicePath = `/invoices/${invoiceId}/${fileName}`;
+
+      const pdfGenratedUrl =await generateStyledPDF({
+        userName: sub.userId.name,
+        fromDate,
+        toDate: endDate,
+        billRows,
+        totalDays,
+        totalAmount,
+        outputFile: fullInvoicePath,
+      });
+
+      await MonthlyMemberBill.create({
+        userId: sub.userId._id,
+        invoiceMonth: invoiceId,
+        invoicePdfUrl: pdfGenratedUrl,
+        invoiceBillStatus: "unpaid",
+        invoiceDownloadStatus: "original",
+      });
+
+      results.push({
+        user: sub.userId.name,
+        email: sub.userId.email,
+        invoiceMonth: invoiceId,
+        totalDays,
+        totalAmount,
+        invoicePdfUrl: publicInvoicePath,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Bills generated successfully.",
+      results,
+    });
+
+  } catch (err) {
+    console.error("❌ Bill generation failed:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      details: err.message,
+    });
+  }
+};
 // ✅ 2. Mark Attendance
 exports.markTiffinAttendance = async (req, res) => {
-  const { records } = req.body;
-  try {
-    const results = await Promise.all(
-      records.map(async ({ userTiffinId, date, status = "present" }) => {
-        try {
-          const attendanceDate = new Date(date);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          if (
-            attendanceDate >= new Date(today.getTime() + 24 * 60 * 60 * 1000)
-          ) {
-            return {
-              success: false,
-              error: `Future date not allowed: ${date}`,
-            };
-          }
+  const { userId, date, tiffinShiftStatus } = req.body;
+  const attendanceDate = new Date(date);
 
-          // const userTiffin = await UserTiffin.findById(userTiffinId).populate("user");
-          const userTiffin = await UserTiffin.findOne({
-            user: userTiffinId, 
-            status: 'active', 
-            fromDate: { $lte: new Date(date) },
-            endDate: { $gte: new Date(date) },
-          });
-          if (!userTiffin || !userTiffin.user) {
-            return {
-              success: false,
-              error: `Invalid userTiffinId: ${userTiffinId}`,
-            };
-          }
+  let errors = [];
+  let success = [];
 
-          const existing = await TiffinAttendance.findOne({
-            userTiffin: userTiffinId,
-            date: attendanceDate,
-          });
-          if (existing) {
-            return {
-              success: false,
-              error: `Attendance already marked for user: ${userTiffin.user.name} on ${date}`,
-            };
-          }
+  for (const uid of userId) {
+    try {
+      const subscription = await TiffinSubscription.findOne({ userId: uid });
+      if (!subscription) {
+        errors.push(`User ${uid} is not subscribed.`);
+        continue;
+      }
 
-          const data = await TiffinAttendance.create({
-            userTiffin: userTiffinId,
-            date: attendanceDate,
-            status,
-          });
+      const alreadyMarked = await TiffinAttendance.findOne({
+        userId: uid,
+        date: attendanceDate,
+        tiffinShiftStatus,
+      });
 
-          return { success: true, data };
-        } catch (err) {
-          return {
-            success: false,
-            error: `DB error on ${date}: ${err.message}`,
-          };
-        }
-      })
-    );
+      if (alreadyMarked) {
+        errors.push(`Attendance already marked for user ${uid}`);
+        continue;
+      }
 
-    const successData = results.filter((r) => r.success).map((r) => r.data);
-    const errors = results.filter((r) => !r.success).map((r) => r.error);
+      await TiffinAttendance.create({
+        userId: uid,
+        date: attendanceDate,
+        status: "present",
+        tiffinShiftStatus,
+      });
 
-    res.status(200).json({
-      message: successData.length
-        ? "Tiffin attendance recorded successfully"
-        : "No attendance was recorded",
-      data: successData,
-      errors,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+      const user = await User.findById(uid);
+      success.push(`Attendance marked for ${user.name || uid}`);
+    } catch (err) {
+      console.error("Error processing user", uid, err.message);
+      errors.push(`Error processing user ${uid}: ${err.message}`);
+    }
   }
+
+  const message =
+    success.length > 0 ? "Attendance marking completed." : "No attendance recorded";
+
+  return res.status(200).json({
+    message,
+    data: success,
+    errors,
+  });
 };
+
+
 
 // ✅ 3. Update Attendance
 exports.updateAttendance = async (req, res) => {
@@ -314,7 +553,7 @@ exports.getAttendanceById = async (req, res) => {
   const { id } = req.params;
   try {
     const data = await TiffinAttendance.findById(id).populate({
-      path: "userTiffin",
+      path: "tiffinSubcription",
       populate: ["user", "tiffinCategory"],
     });
     if (!data)
@@ -327,5 +566,54 @@ exports.getAttendanceById = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
+exports.getAttendances = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      sortField = "createdAt",
+      sortOrder = "desc",
+      search = "",
+    } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const sort = { [sortField]: sortOrder === "asc" ? 1 : -1 };
+
+    // Build filter conditionally based on search
+    let filter = {};
+    if (search && search.trim() !== "") {
+      const searchRegex = new RegExp(search, "i");
+      filter = {
+        $or: [
+          { status: searchRegex },
+          { tiffinShiftStatus: searchRegex },
+        ],
+      };
+    }
+
+    const total = await TiffinAttendance.countDocuments(filter);
+
+    const data = await TiffinAttendance.find(filter)
+      .populate({
+        path: "userId",
+        select: "name", // Only fetch user's name
+      })
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit));
+
+    res.status(200).json({
+      success: true,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      totalRecords: total,
+      data,
+    });
+  } catch (err) {
+    console.error("Fetch error:", err);
+    res.status(500).json({ success: false, message: "Server Error", error: err.message });
   }
 };

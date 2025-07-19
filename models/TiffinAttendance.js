@@ -2,14 +2,13 @@ const mongoose = require("mongoose");
 
 const tiffinAttendanceSchema = new mongoose.Schema(
   {
-    userTiffin: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "UserTiffin",
-      required: true,
-    },
-    date: {
-      type: Date,
-      required: true,
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    tiffinSubcription: { type: mongoose.Schema.Types.ObjectId, ref: "TiffinSubscription" },
+    date: { type: Date, required: true },
+    tiffinShiftStatus: {
+      type: String,
+      enum: ["morning", "evening", null],
+      default: null,
     },
     status: {
       type: String,
@@ -21,5 +20,10 @@ const tiffinAttendanceSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-tiffinAttendanceSchema.index({ userTiffin: 1, date: 1 }, { unique: true });
+
+tiffinAttendanceSchema.index(
+  { userId: 1, date: 1, tiffinShiftStatus: 1 },
+  { unique: true }
+);
+
 module.exports = mongoose.model("TiffinAttendance", tiffinAttendanceSchema);

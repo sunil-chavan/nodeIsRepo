@@ -1,6 +1,6 @@
 // controllers/dashboardController.js
 const User = require("../models/User");
-const UserTiffin = require("../models/UserTiffin");
+const UserTiffin = require("../models/TiffinSubscription");
 const TiffinCategory = require("../models/TiffinCategory");
 const Expense = require("../models/Expense");
 const Income = require("../models/Income");
